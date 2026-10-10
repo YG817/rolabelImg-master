@@ -1,5 +1,5 @@
 """Single source for client, installer and GitHub release versions."""
-APP_VERSION = '2.0.0'
+APP_VERSION = '2.0.1'
 GITHUB_OWNER = 'YG817'
 GITHUB_REPO = 'rolabelImg-master'
 REPOSITORY_URL = f'https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}'

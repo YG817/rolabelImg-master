@@ -27,6 +27,7 @@ OutputBaseFilename=roLabelImg-Setup-{#AppVersion}-win-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\icons\roLabelImg.ico
 UninstallDisplayIcon={app}\roLabelImg.exe
 UsePreviousAppDir=yes
 DisableProgramGroupPage=yes

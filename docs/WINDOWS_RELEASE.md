@@ -2,7 +2,8 @@
 
 发布仓库：<https://github.com/YG817/rolabelImg-master>。
 本方案以 Windows 10/11 x64、Python 3.12、公开 GitHub Releases 为目标。
-当前新客户端版本起点为 **2.0.0**；发布前可以在 `app_version.py` 调整。
+**2.0.0 已正式发布**，当前本地准备的图标修正版是 **2.0.1**。
+逐步操作、多种发布方式及图标替换请看 [构建与发布操作手册](BUILD_AND_RELEASE_GUIDE.md)。
 
 ## 1. 发布流程
 
@@ -51,6 +52,8 @@ roLabelImg-master/
 │   ├── installer.iss                # Inno Setup 安装、快捷方式、升级与卸载
 │   └── RELEASE_NOTES.md              # 本次发布说明模板，每版修改
 ├── tools/build_windows.py            # 构建、exe 自检、安装包、压缩、校验和
+├── tools/make_windows_icon.py        # 将已有 PNG 转换成 ICO，不改变图案
+├── icons/roLabelImg.ico              # EXE、Setup 和卸载程序图标
 ├── .github/workflows/windows-release.yml
 └── docs/WINDOWS_RELEASE.md            # 本说明
 ```
@@ -140,8 +143,15 @@ Windows wheel 的 `.libs` 目录。GDAL / PROJ 的数据路径由 runtime hook �
 图标来自现有 `resources.py`，无须在用户电脑运行 pyrcc5。
 如以后更新图标，先重新生成 resources.py，再重新构建。
 
-当前未配置自定义 exe 文件图标；可准备 `.ico` 后给 spec 中 EXE 增加 icon 路径，
-并在 installer.iss 增加 SetupIconFile。应用窗口已有原项目图标。
+EXE 文件图标和安装包图标都使用 `icons/roLabelImg.ico`，由现有窗口图标
+`icons/expert2.png` 转换而来。spec 的 EXE 配置了 icon，installer.iss 配置了
+SetupIconFile；卸载项及快捷方式使用程序 EXE 的图标。重新构建才会改变产物。
+原图是 48×48；如需高清自定义品牌标志，可替换为包含 16/32/48/64/256 尺寸的 ICO。
+安装向导的右上角图片和欢迎页插图是独立的 WizardSmallImageFile / WizardImageFile 配置。
+
+构建工具还支持 `--exe-only` 和 `--installer-only`。前者生成 EXE 并自检；后者
+复用当前版本的 dist 程序，重新自检后生成 Setup、ZIP 和校验文件。
+已有 EXE 的自检版本与 APP_VERSION 不符时，安装包构建会停止，要求先重建程序。
 
 ## 5. 安装与升级配置
 

@@ -21,7 +21,10 @@ def run(*args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--iscc', help='Absolute path to Inno Setup 6 ISCC.exe')
+    parser.add_argument('--iscc', help='Absolute path to Inno Setup 6/7 ISCC.exe')
+    stages = parser.add_mutually_exclusive_group()
+    stages.add_argument('--exe-only', action='store_true', help='Build and smoke-test the client only')
+    stages.add_argument('--installer-only', action='store_true', help='Package an existing client of the current version')
     args = parser.parse_args()
     if sys.platform != 'win32' or platform.architecture()[0] != '64bit':
         parser.error('Run with a 64-bit Python on Windows')
@@ -39,17 +42,26 @@ def main():
             StringStruct('ProductName', 'roLabelImg'), StringStruct('OriginalFilename', 'roLabelImg.exe')])]),
         VarFileInfo([VarStruct('Translation', [1033, 1200])])])
     (build / 'windows-version.txt').write_text(str(info), encoding='utf-8')
-    run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
-        '--distpath', ROOT / 'dist', '--workpath', build / 'pyinstaller', ROOT / 'packaging' / 'roLabelImg.spec')
+    if not args.installer_only:
+        run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+            '--distpath', ROOT / 'dist', '--workpath', build / 'pyinstaller', ROOT / 'packaging' / 'roLabelImg.spec')
     executable = ROOT / 'dist' / 'roLabelImg' / 'roLabelImg.exe'
+    if not executable.is_file():
+        raise RuntimeError('Client missing; build it with --exe-only first')
     report = build / 'frozen-smoke.json'
     run(executable, '--smoke-test', report)
-    if not json.loads(report.read_text(encoding='utf-8'))['ok']:
+    smoke = json.loads(report.read_text(encoding='utf-8'))
+    if not smoke['ok']:
         raise RuntimeError('Frozen smoke test failed: ' + str(report))
+    if smoke.get('version') != VERSION:
+        raise RuntimeError('Existing client version does not match APP_VERSION; rebuild the client first')
+    if args.exe_only:
+        print('Client executable:', executable)
+        return
     compiler = args.iscc or shutil.which('ISCC') or str(
         Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Inno Setup 6' / 'ISCC.exe')
     if not Path(compiler).is_file():
-        raise RuntimeError('Install Inno Setup 6 or pass --iscc "...\\ISCC.exe"')
+        raise RuntimeError('Install Inno Setup 6/7 or pass --iscc "...\\ISCC.exe"')
     release = ROOT / 'release'
     release.mkdir(exist_ok=True)
     run(compiler, '/DAppVersion=' + VERSION, '/DSourceDir=' + str(executable.parent),

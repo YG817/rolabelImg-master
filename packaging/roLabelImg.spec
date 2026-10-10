@@ -20,5 +20,6 @@ a = Analysis([str(root / 'client_entry.py')], pathex=[str(root), str(root / 'lib
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='roLabelImg',
           debug=False, strip=False, upx=False, console=False,
+          icon=str(root / 'icons' / 'roLabelImg.ico'),
           version=str(root / 'build' / 'windows-version.txt'), contents_directory='_internal')
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='roLabelImg')

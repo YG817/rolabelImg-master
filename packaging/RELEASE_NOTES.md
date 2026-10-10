@@ -1,6 +1,11 @@
-Windows x64 release of roLabelImg.
+roLabelImg 2.0.1 · Windows x64
 
-请选择 `roLabelImg-Setup-版本号-win-x64.exe` 安装；绿色版请完整解压 portable.zip。
+- 程序 EXE、安装包和卸载程序使用软件现有的标签图标。
+- 构建工具支持分别生成 EXE 和安装包；复用已有 EXE 时检查版本，避免包装旧程序。
+
+请选择 `roLabelImg-Setup-2.0.1-win-x64.exe` 安装；绿色版请完整解压 `roLabelImg-2.0.1-win-x64-portable.zip`。
 升级前保存标注并退出软件，再运行新安装包。
 
-发布前请在此补充本版本的变更、已知问题和验收结果。
+验证：118 项源码测试通过；本地 Windows EXE 启动自检通过，版本为 2.0.1；已确认 EXE 和安装包嵌入软件图标，并核对发布文件的 SHA-256。
+
+尚未完成从 2.0.0 安装到 2.0.1 的人工升级验收。安装包未签名，Windows 可能显示未知发布者提示。

@@ -22,6 +22,7 @@ def smoke_test(report, root):
         from coco_io import save_coco, read_coco
         from pascal_voc_io import PascalVocWriter, PascalVocReader
         import roLabelImg  # Ensure every GUI import works in the bundle.
+        from app_version import APP_VERSION
         app = QApplication.instance() or QApplication([])
         assert not newIcon('app').isNull(), 'Qt icon resources missing'
         assert (root / 'data' / 'predefined_classes.txt').is_file(), 'Class resource missing'
@@ -43,7 +44,8 @@ def smoke_test(report, root):
             writer.addBndBox(1, 2, 20, 25, 'Bridge', False)
             writer.save(voc)
             assert len(PascalVocReader(voc).getShapes()) == 1
-        result = {'ok': True, 'checks': ['Qt/icons', 'class resources', 'TIFF/GDAL', 'PROJ', 'PNG', 'COCO', 'VOC', 'GUI imports']}
+        result = {'ok': True, 'version': APP_VERSION,
+                  'checks': ['Qt/icons', 'class resources', 'TIFF/GDAL', 'PROJ', 'PNG', 'COCO', 'VOC', 'GUI imports']}
     except Exception:
         result['error'] = traceback.format_exc()
     report.parent.mkdir(parents=True, exist_ok=True)
