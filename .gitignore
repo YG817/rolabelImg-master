@@ -1,0 +1,15 @@
+*.pyc
+.venv/
+.pytest_cache/
+*/__pycache__
+.vscode
+__pycache__
+*.DS_Store
+labelImg.py 
+roLabelImg.py.bak
+CONTRIBUTING.rst
+build/
+dist/
+release/
+.build-venv/
+.idea/

@@ -1,0 +1,16 @@
+include HISTORY.rst
+include README.rst
+include USER_GUIDE.md
+include UPGRADE.md
+include requirements.txt
+
+include resources.qrc
+
+recursive-include data *
+recursive-include icons *
+recursive-include libs *
+
+recursive-exclude build-tools *
+recursive-exclude tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]

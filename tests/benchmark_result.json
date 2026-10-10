@@ -1,0 +1,17 @@
+{
+  "file_bytes": 1812013322,
+  "dimensions": [
+    24576,
+    24576
+  ],
+  "overview_seconds": 1.906,
+  "detail_seconds": 0.359,
+  "heartbeat_count": 182,
+  "max_heartbeat_gap_ms": 109.0,
+  "baseline_working_set_mb": 83.5,
+  "max_sampled_working_set_mb": 214.54,
+  "preview": [
+    2048,
+    2048
+  ]
+}
