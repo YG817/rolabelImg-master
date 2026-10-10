@@ -1,7 +1,7 @@
 # roLabelImg Windows 客户端发布与手动升级方案
 
 发布仓库：<https://github.com/YG817/rolabelImg-master>。
-本方案以 Windows 10/11 x64、Python 3.11、公开 GitHub Releases 为目标。
+本方案以 Windows 10/11 x64、Python 3.12、公开 GitHub Releases 为目标。
 当前新客户端版本起点为 **2.0.0**；发布前可以在 `app_version.py` 调整。
 
 ## 1. 发布流程
@@ -88,22 +88,22 @@ roLabelImg-Setup-2.0.0-win-x64.exe
 
 ### 4.1 安装构建工具
 
-安装 **64 位 Python 3.11** 和 **Inno Setup 6**。本地可以使用官方较新的 Inno Setup 6；
+安装 **64 位 Python 3.12** 和 **Inno Setup 6**。本地可以使用官方较新的 Inno Setup 6；
 工作流在需要安装编译器时使用 6.4.3，已有编译器则复用。
 
-当前检测到的本地 Conda Python 是 **3.10.0**，PyInstaller 官方明确不支持它。
-开发标注功能可以继续使用当前环境，构建发行版请使用单独的 Python 3.11 环境。
+原开发环境的 Conda Python 是 **3.10.0**，PyInstaller 官方明确不支持它。
+当前本地已使用 Python **3.12.10** 完成发布构建；Actions 使用同一 Python 3.12 系列。
 
 在项目根目录执行（PowerShell）：
 
 ```powershell
-py -3.11 -m venv .build-venv
+py -3.12 -m venv .build-venv
 .\.build-venv\Scripts\python.exe -m pip install -r packaging\requirements-windows.txt
 .\.build-venv\Scripts\python.exe -m pytest -q
 .\.build-venv\Scripts\python.exe tools\build_windows.py
 ```
 
-如果你使用本地 Conda 的 Python 3.11，可把 `.build-venv\Scripts\python.exe` 换成该环境的
+如果你使用本地 Conda 的 Python 3.12，可把 `.build-venv\Scripts\python.exe` 换成该环境的
 `python.exe` 完整路径。推荐使用只有本项目依赖的构建环境，避免把开发工具和额外 GUI 框架打进去。
 这里的虚拟环境只用于发布构建，最终用户不需要它，也没有新增用户启动脚本。
 
@@ -276,9 +276,33 @@ git push origin v2.0.0
 若报 Qt platform plugin，检查 `_internal` 的 Qt plugins/platforms/qwindows.dll。
 不要单独移动 exe。启动失败可查看 client.log，打包自检失败查看 frozen-smoke.json。
 
-当前本地没有 PyInstaller 和 Inno Setup 编译器，也只有不适于构建的 Python 3.10.0。
-因此这里提供的是已接入项目并完成源码验证的发布配置，尚未声称生成或验收了真实 Setup.exe。
-首次 Actions 的 frozen smoke 和干净系统人工验收必须完成后再发布。
+本地已在 Python 3.12.10 和指定路径的 Inno Setup 7 编译器下生成 2.0.0 安装包，
+打包后的基础自检通过。云端构建结果和干净系统人工验收仍需分别确认，完成后再发布。
+
+### Windows 测试发生 access violation 时
+
+若日志停在 `libs/ui_theme.py` 的 `app.setStyle('Fusion')`，检查是否每创建一个窗口
+就替换整个应用的 Qt 样式。本项目已将全局字体、样式和调色板改为在创建窗口控件前
+每个 QApplication 只初始化一次；测试结束还会释放窗口，避免积累关闭后的控件。
+缩放、定位和启动加载等延迟回调使用窗口拥有的计时器，窗口销毁后会取消待执行操作。
+Actions 使用详细测试名称并保存文本日志和 JUnit 报告，可从 `test-diagnostics` 附件下载。
+原生崩溃来不及生成 JUnit 报告时，可查看文本日志或 Actions 的 Test source 日志。
+
+修复后必须提交并重新触发包含修复代码的版本构建。直接点旧任务的 Re-run 会继续
+执行旧提交，不能使用 main 分支中新改的代码。
+若 `v2.0.0` 首次构建失败且还没有正式发布，可按下面流程更新这个未发布标签：
+
+```powershell
+git add .
+git commit -m "Fix Qt theme initialization in Windows release tests"
+git push origin main
+$previousTag = git rev-parse refs/tags/v2.0.0
+git tag -f -a v2.0.0 -m "roLabelImg 2.0.0"
+git push origin "refs/tags/v2.0.0:refs/tags/v2.0.0" "--force-with-lease=refs/tags/v2.0.0:$previousTag"
+```
+
+上述标签更新仅用于未发布的首次构建，且远程标签必须仍是记录的旧值；若服务器拒绝，
+先核对远程是否有其他修改。已经正式发布的版本必须递增 APP_VERSION 后使用新标签。
 
 ## 10. 发布材料与签名
 

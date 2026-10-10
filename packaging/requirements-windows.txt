@@ -1,4 +1,4 @@
-# Build with CPython 3.11 x64 on Windows. Update these pins only in a tested release.
+# Build with CPython 3.12 x64 on Windows. Update these pins only in a tested release.
 PyQt5==5.15.11
 rasterio==1.4.4
 numpy==2.2.6

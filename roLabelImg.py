@@ -42,7 +42,7 @@ from ustr import ustr
 from image_loader import ImageLoader, Spinner
 from coco_io import save_coco, read_coco
 from label_store import LabelStore, canonical_label_name
-from ui_theme import apply_theme, style_label_item
+from ui_theme import apply_theme, initialize_application_theme, style_label_item
 from category_delegate import CategoryDelegate, CategoryTable
 from browser_launcher import BrowserLauncher
 from quick_guide import create_quick_guide
@@ -101,6 +101,7 @@ class MainWindow(QMainWindow, WindowMixin):
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = list(range(3))
 
     def __init__(self, defaultFilename=None, defaultPrefdefClassFile=None):
+        initialize_application_theme()
         super(MainWindow, self).__init__()
         self.setWindowTitle(__appname__)
         # Save as Pascal voc xml
@@ -881,7 +882,13 @@ class MainWindow(QMainWindow, WindowMixin):
             self.shapeSelectionChanged(False)
 
     def queueEvent(self, function):
-        QTimer.singleShot(0, function)
+        # A static singleShot with a Python closure can outlive the window.
+        # Parenting the timer cancels pending callbacks when widgets are deleted.
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(function)
+        timer.timeout.connect(timer.deleteLater)
+        timer.start(0)
 
     def status(self, message, delay=5000):
         # print(message)
@@ -1264,7 +1271,7 @@ class MainWindow(QMainWindow, WindowMixin):
             local = (point + self.canvas.offsetToCenter()) * self.canvas.scale
             self.scrollBars[Qt.Horizontal].setValue(round(local.x() - viewport.width() / 2))
             self.scrollBars[Qt.Vertical].setValue(round(local.y() - viewport.height() / 2))
-        QTimer.singleShot(0, center)
+        self.queueEvent(center)
 
     def focusAnnotation(self, item=None):
         if item not in self.itemsToShapes:
@@ -1525,7 +1532,7 @@ class MainWindow(QMainWindow, WindowMixin):
             global_anchor = viewport.mapToGlobal(anchor)
             self.restoreZoomAnchor(before, global_anchor, serial)
             # Scrollbar appearance can resize the viewport after this event.
-            QTimer.singleShot(0, lambda: self.restoreZoomAnchor(before, global_anchor, serial))
+            self.queueEvent(lambda: self.restoreZoomAnchor(before, global_anchor, serial))
 
     def restoreZoomAnchor(self, point, global_anchor, serial):
         if serial != self._zoomSerial or self.image.isNull():

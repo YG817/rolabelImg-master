@@ -26,7 +26,7 @@ def main():
     if sys.platform != 'win32' or platform.architecture()[0] != '64bit':
         parser.error('Run with a 64-bit Python on Windows')
     if sys.version_info[:3] == (3, 10, 0):
-        parser.error('PyInstaller does not support Python 3.10.0; use Python 3.11')
+        parser.error('PyInstaller does not support Python 3.10.0; use Python 3.12')
     from PyInstaller.utils.win32.versioninfo import (
         VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct, VarFileInfo, VarStruct)
     version = tuple(map(int, VERSION.split('.'))) + (0,)

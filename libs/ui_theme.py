@@ -83,8 +83,16 @@ def line_icon(paths):
     return QIcon(pixmap)
 
 
-def apply_theme(window):
+def initialize_application_theme():
+    """Initialize shared Qt style before creating widgets, once per application."""
     app = QApplication.instance()
+    if app is None:
+        raise RuntimeError('Create QApplication before initializing the theme')
+    if app.property('roLabelImgThemeInitialized'):
+        return
+    # Replacing the application style deletes the previous QStyle and repolishes
+    # every widget, including closed windows awaiting destruction. Never repeat
+    # this for each MainWindow: Qt's Windows style caches can retain old pointers.
     app.setStyle('Fusion')
     app.setFont(QFont('Microsoft YaHei UI', 10))
     # Explicit light palette also keeps native popups legible in Windows dark mode.
@@ -92,6 +100,11 @@ def apply_theme(window):
     palette.setColor(QPalette.Highlight, QColor('#346bd1'))
     palette.setColor(QPalette.HighlightedText, QColor('#ffffff'))
     app.setPalette(palette)
+    app.setProperty('roLabelImgThemeInitialized', True)
+
+
+def apply_theme(window):
+    initialize_application_theme()
     window.setStyleSheet(STYLESHEET)
     window.setMinimumSize(960, 640)
     window.dock.setMinimumWidth(0)

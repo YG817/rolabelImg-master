@@ -11,9 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'libs'))
 
-from PyQt5.QtCore import QPointF, QSettings, Qt, QTimer
+from PyQt5.QtCore import QPointF, QSettings, Qt, QTimer, QCoreApplication, QEvent
 from PyQt5.QtGui import QImage, QPixmap, QColor
 from PyQt5.QtWidgets import QApplication, QDialog, QListWidget, QPushButton, QInputDialog, QColorDialog
+from PyQt5.QtTest import QTest
 import roLabelImg
 from label_store import LabelStore
 
@@ -42,6 +43,14 @@ class ContinuousWorkflowTests(unittest.TestCase):
     def tearDown(self):
         self.window.dirty = False
         self.window.close()
+        for _ in range(1000):
+            if not self.window._workers:
+                break
+            QTest.qWait(10)
+        self.assertFalse(self.window._workers, 'Background workers did not finish')
+        self.window.close()
+        self.window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         roLabelImg.LabelStore = self.original_store
         self.temp.cleanup()
 

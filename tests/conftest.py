@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'libs'))
 import pytest
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QSettings, QStandardPaths
+from PyQt5.QtCore import QSettings, QStandardPaths, QCoreApplication, QEvent
 from PyQt5.QtTest import QTest
 
 @pytest.fixture(scope='session')
@@ -30,11 +30,15 @@ def window(app, tmp_path, monkeypatch):
     win = roLabelImg.MainWindow()
     win.show()
     app.processEvents()
-    yield win
-    win.dirty = False
-    win.close()
-    wait_until(lambda: not win._workers)
-    win.close()
+    try:
+        yield win
+    finally:
+        win.dirty = False
+        win.close()
+        wait_until(lambda: not win._workers)
+        win.close()
+        win.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 def wait_until(predicate, timeout=10000):
     import time
