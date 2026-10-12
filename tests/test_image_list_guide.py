@@ -50,7 +50,8 @@ def test_folder_list_relative_paths_navigation_and_cancel(window, tmp_path, monk
 def test_direct_quick_guide_action(window):
     actions = window.menuBar().actions()
     assert window.guideAction in actions
-    assert window.guideAction.text() == '❔ 操作说明'
+    assert window.guideAction.text() == '操作说明'
+    assert not window.guideAction.icon().isNull()
     assert window.menus.help.menuAction() not in actions
     window.guideAction.trigger()
     tabs = window._guideDialog.findChild(QTabWidget)

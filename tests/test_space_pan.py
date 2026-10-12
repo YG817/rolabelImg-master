@@ -45,12 +45,12 @@ def test_hold_space_pans_over_boxes_and_restores_mode(window, drawing, locked):
     with patch.object(window, 'saveFile') as save:
         QTest.keyPress(canvas, Qt.Key_Space)
         assert canvas._spacePanHeld
-        assert QApplication.overrideCursor().shape() == Qt.OpenHandCursor
+        assert canvas.cursor().shape() == Qt.OpenHandCursor
         mouse(canvas, QEvent.MouseButtonPress, global_pos, Qt.LeftButton, Qt.LeftButton)
-        assert QApplication.overrideCursor().shape() == Qt.ClosedHandCursor
+        assert canvas.cursor().shape() == Qt.ClosedHandCursor
         mouse(canvas, QEvent.MouseMove, global_pos + QPoint(50, 30), held=Qt.LeftButton)
         mouse(canvas, QEvent.MouseButtonRelease, global_pos + QPoint(50, 30), Qt.LeftButton)
-        assert QApplication.overrideCursor().shape() == Qt.OpenHandCursor
+        assert canvas.cursor().shape() == Qt.OpenHandCursor
         QTest.keyRelease(canvas, Qt.Key_Space)
         save.assert_not_called()
     assert window.scrollBars[Qt.Horizontal].value() == 250

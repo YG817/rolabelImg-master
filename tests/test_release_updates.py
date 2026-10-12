@@ -57,6 +57,7 @@ def test_http_errors_and_size_limit(monkeypatch):
     class Response:
         def __enter__(self): return self
         def __exit__(self, *args): pass
+        def geturl(self): return 'https://release-assets.githubusercontent.com/metadata'
         def read(self, size): return b' ' * size
     monkeypatch.setattr(update_checker, 'urlopen', lambda *a, **k: Response())
     with pytest.raises(ValueError, match='过大'):

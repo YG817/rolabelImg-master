@@ -9,6 +9,25 @@ def identity(path):
     return os.path.normcase(os.path.realpath(os.path.abspath(path)))
 
 
+def file_revision(path):
+    """Identify the file that failed to load, rather than banning its name."""
+    try:
+        stat = os.stat(path)
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+    except OSError:
+        return None
+
+
+def empty_annotation_placeholder(path):
+    """An empty file/container has no existing annotation records to lose."""
+    try:
+        with open(path, 'rb') as stream:
+            content = stream.read(65)
+        return len(content) <= 64 and content.decode('utf-8-sig').strip() in ('', '{}', '[]')
+    except (OSError, UnicodeError):
+        return False
+
+
 def annotation_path(image, suffix, savedir=None, image_root=None, images=()):
     image = os.path.abspath(image)
     directory = os.path.dirname(image)
@@ -63,6 +82,9 @@ def annotation_source(path):
 
 def safe_to_overwrite(path, image, loaded_paths=()):
     if not os.path.isfile(path):
+        return True
+    # A newly created empty placeholder has no annotations to preserve.
+    if empty_annotation_placeholder(path):
         return True
     source = annotation_source(path)
     if source:

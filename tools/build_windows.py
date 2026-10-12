@@ -78,6 +78,10 @@ def main():
                 digest.update(chunk)
         hashes.append(digest.hexdigest() + '  ' + path.name)
     (release / 'SHA256SUMS.txt').write_text('\n'.join(hashes) + '\n', encoding='utf-8')
+    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / 'libs'))
+    from update_manifest import write_update_manifest
+    write_update_manifest(release, VERSION, (ROOT / 'packaging' / 'RELEASE_NOTES.md').read_text(encoding='utf-8'))
     freeze = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True)
     (release / 'build-info.json').write_text(json.dumps(dict(version=VERSION, python=sys.version,
         platform=platform.platform(), dependencies=freeze.splitlines(), smoke=json.loads(report.read_text())),

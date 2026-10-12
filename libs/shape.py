@@ -11,6 +11,8 @@ except ImportError:
 
 from lib import distance
 import math
+import weakref
+from geometry_tracking import TrackedList
 
 DEFAULT_LINE_COLOR = QColor(0, 255, 0, 128)
 DEFAULT_FILL_COLOR = QColor(255, 0, 0, 128)
@@ -38,6 +40,8 @@ class Shape(object):
     scale = 1.0
 
     def __init__(self, label=None, line_color=None,difficult = False):
+        self._geometryListeners = []
+        self._pathCache = self._boundsCache = self._vertexCache = self._labelEdgeCache = None
         self.label = label
         self.points = []
         self.fill = False
@@ -64,6 +68,39 @@ class Shape(object):
             # with an object attribute. Currently this
             # is used for drawing the pending line a different color.
             self.line_color = line_color
+
+    @property
+    def label(self):
+        return self._label
+
+    @label.setter
+    def label(self, value):
+        self._label = value
+        self.geometryChanged()
+
+    @property
+    def points(self):
+        return self._points
+
+    @points.setter
+    def points(self, values):
+        self._points = TrackedList(values, self.geometryChanged)
+        self.geometryChanged()
+
+    def watchGeometry(self, callback):
+        ref = weakref.WeakMethod(callback)
+        if ref not in self._geometryListeners:
+            self._geometryListeners.append(ref)
+
+    def geometryChanged(self):
+        self._pathCache = self._boundsCache = self._vertexCache = self._labelEdgeCache = None
+        alive = []
+        for ref in self._geometryListeners:
+            callback = ref()
+            if callback is not None:
+                alive.append(ref)
+                callback(self)
+        self._geometryListeners = alive
 
 
     def rotate(self, theta):
@@ -118,19 +155,15 @@ class Shape(object):
             pen.setWidth(max(1, int(round(2.0 / self.scale))))
             painter.setPen(pen)
 
-            line_path = QPainterPath()
-            vrtx_path = QPainterPath()
-
-            line_path.moveTo(self.points[0])
-            # Uncommenting the following line will draw 2 paths
-            # for the 1st vertex, and make it non-filled, which
-            # may be desirable.
-            #self.drawVertex(vrtx_path, 0)
-
-            for i, p in enumerate(self.points):
-                line_path.lineTo(p)
-                # print('shape paint points (%d, %d)' % (p.x(), p.y()))
-                self.drawVertex(vrtx_path, i)
+            line_path = self.makePath()
+            vertex_key = (self.scale, self.point_size, self.point_type, self._highlightIndex, self._highlightMode)
+            if self._vertexCache is None or self._vertexCache[0] != vertex_key:
+                vrtx_path = QPainterPath()
+                for i in range(len(self.points)):
+                    self.drawVertex(vrtx_path, i)
+                self._vertexCache = (vertex_key, vrtx_path)
+            vrtx_path = self._vertexCache[1]
+            self.vertex_fill_color = self.hvertex_fill_color if self._highlightIndex is not None else Shape.vertex_fill_color
             if self.isClosed():
                 line_path.lineTo(self.points[0])
 
@@ -167,6 +200,8 @@ class Shape(object):
         """
         if len(self.points) != 4:
             return None
+        if self._labelEdgeCache is not None and self._labelEdgeCache[0] == self.direction:
+            return self._labelEdgeCache[1]
         along = QPointF(math.cos(self.direction), math.sin(self.direction))
         down = QPointF(-along.y(), along.x())
         center = (self.points[0] + self.points[2]) / 2
@@ -177,7 +212,9 @@ class Shape(object):
                     + projection(self.points[i], down))
         neighbors = ((index + 1) % 4, (index - 1) % 4)
         end = max(neighbors, key=lambda i: projection(self.points[i], along))
-        return self.points[index], self.points[end]
+        edge = self.points[index], self.points[end]
+        self._labelEdgeCache = (self.direction, edge)
+        return edge
 
     def paintLabel(self, painter):
         edge = self.labelEdge()
@@ -242,16 +279,24 @@ class Shape(object):
         return index if distance(self.points[index] - point) <= epsilon else None
 
     def containsPoint(self, point):
+        if not self.boundingRect().contains(point):
+            return False
         return self.makePath().contains(point)
 
     def makePath(self):
-        path = QPainterPath(self.points[0])
-        for p in self.points[1:]:
-            path.lineTo(p)
-        return path
+        if self._pathCache is None:
+            path = QPainterPath()
+            if self.points:
+                path.moveTo(self.points[0])
+                for point in self.points[1:]:
+                    path.lineTo(point)
+            self._pathCache = path
+        return QPainterPath(self._pathCache)
 
     def boundingRect(self):
-        return self.makePath().boundingRect()
+        if self._boundsCache is None:
+            self._boundsCache = self.makePath().boundingRect()
+        return QRectF(self._boundsCache)
 
     def moveBy(self, offset):
         self.points = [p + offset for p in self.points]

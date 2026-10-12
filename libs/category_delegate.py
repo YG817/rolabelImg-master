@@ -7,9 +7,13 @@ from PyQt5.QtWidgets import QStyledItemDelegate, QStyle, QTableWidget
 class CategoryTable(QTableWidget):
     columnsChanged = pyqtSignal()
 
+    def columnsForWidth(self):
+        # The table's own width is stable when its scrollbar appears/disappears.
+        return 2 if self.width() >= 340 else 1
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        columns = 2 if self.viewport().width() >= 360 else 1
+        columns = self.columnsForWidth()
         if columns != self.columnCount():
             self.columnsChanged.emit()
 
@@ -28,21 +32,24 @@ class CategoryDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         painter.save()
-        rect = option.rect
+        rect = option.rect.adjusted(2, 2, -2, -2)
+        name = index.data(Qt.UserRole + 1)
+        if not name:
+            painter.restore()
+            return
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
-        painter.fillRect(rect, QColor('#dceaff' if selected else '#f0f5ff' if hovered else '#ffffff'))
-        if selected:
-            painter.setPen(QPen(QColor('#6292e8'), 1))
-            painter.drawRect(rect.adjusted(1, 1, -2, -2))
+        painter.setRenderHint(painter.Antialiasing)
+        painter.setPen(QPen(QColor('#d3e1fa'), 1) if selected else Qt.NoPen)
+        painter.setBrush(QColor('#edf3ff' if selected else '#f9fafb' if hovered else '#ffffff'))
+        painter.drawRoundedRect(rect, 5, 5)
         color = QColor(index.data(Qt.UserRole + 2))
-        painter.setPen(QPen(QColor('#65758b'), 1))
+        painter.setPen(QPen(color.darker(115), 1))
         painter.setBrush(color)
-        painter.drawRoundedRect(rect.x() + 8, rect.y() + 10, 18, 18, 4, 4)
-        name = index.data(Qt.UserRole + 1) or ''
-        text_rect = QRect(rect.x() + 34, rect.y() + 2, rect.width() - 40, rect.height() - 4)
+        painter.drawRoundedRect(rect.x() + 7, rect.center().y() - 6, 13, 13, 3, 3)
+        text_rect = QRect(rect.x() + 29, rect.y(), rect.width() - 35, rect.height())
         font = painter.font()
-        font.setWeight(QFont.DemiBold)
+        font.setWeight(QFont.Medium if selected else QFont.Normal)
         painter.setFont(font)
         painter.setPen(QColor('#243247'))
         painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter,

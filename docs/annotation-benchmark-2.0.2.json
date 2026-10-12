@@ -1,0 +1,11 @@
+{
+  "scene": "10,000 boxes, 120-pixel spacing, 40 x 30 boxes, zoom 100%, Windows offscreen",
+  "index_build_ms": 109.533,
+  "full_scan_pick_ms": 92.821,
+  "indexed_pick_ms": 0.035,
+  "near_pointer_candidates": 1,
+  "full_scan_paint_ms": 341.713,
+  "clipped_paint_ms": 4.283,
+  "viewport_candidates": 80,
+  "note": "Microbenchmarks of picking and annotation drawing, not whole-app latency or a real TIFF workload."
+}

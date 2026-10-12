@@ -43,16 +43,21 @@ from image_loader import ImageLoader, Spinner
 from coco_io import save_coco, read_coco
 from label_store import LabelStore, canonical_label_name
 from ui_theme import apply_theme, initialize_application_theme, style_label_item
+from ui_theme import (ModernComboBox as QComboBox, ModernMenu as QMenu,
+                      ModernDialog as QDialog, ModernMenuBar, panel, ui_label, set_role)
 from category_delegate import CategoryDelegate, CategoryTable
 from browser_launcher import BrowserLauncher
 from quick_guide import create_quick_guide
-from annotation_paths import annotation_path, annotation_source, identity, safe_to_overwrite
+from annotation_paths import (annotation_path, annotation_source, identity, safe_to_overwrite,
+                             file_revision, empty_annotation_placeholder)
 from box_geometry import validate_box
 from annotation_delegate import AnnotationDelegate
 from inspection import InspectionDialog
-from view_layout import ImageScrollArea, ResponsiveRow, PanelScrollArea
+from view_layout import ImageScrollArea, ResponsiveRow, PanelScrollArea, SectionSplitter
 from app_version import APP_VERSION
 from update_checker import UpdateController
+from batch_edit_dialog import BatchEditDialog
+from shape_label_dialog import ShapeLabelDialog
 
 __appname__ = 'roLabelImg'
 
@@ -71,7 +76,8 @@ def util_qt_strlistclass():
 class WindowMixin(object):
 
     def menu(self, title, actions=None):
-        menu = self.menuBar().addMenu(title)
+        menu = QMenu(title, self)
+        self.menuBar().addMenu(menu)
         if actions:
             addActions(menu, actions)
         return menu
@@ -79,11 +85,22 @@ class WindowMixin(object):
     def toolbar(self, title, actions=None):
         toolbar = ToolBar(title)
         toolbar.setObjectName(u'%sToolBar' % title)
-        # toolbar.setOrientation(Qt.Vertical)
-        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        toolbar.setOrientation(Qt.Vertical)
+        toolbar.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         if actions:
             addActions(toolbar, actions)
-        self.addToolBar(Qt.LeftToolBarArea, toolbar)
+        self.toolsDock = QDockWidget(self)
+        self.toolsDock.setObjectName('ToolsDock')
+        self.toolsDock.setAllowedAreas(Qt.LeftDockWidgetArea)
+        self.toolsDock.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.toolsDock.setTitleBarWidget(QWidget())
+        self.toolsDock.setToolTip('拖动右边缘调整宽度；收窄后仅显示图标')
+        self.toolsDock.setMinimumWidth(58)
+        self.toolsDock.setWidget(PanelScrollArea(toolbar))
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.toolsDock)
         return toolbar
 
 
@@ -143,7 +160,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self._undoStack = []
         self._redoStack = []
         self._annotationPaths = {}
-        self._failedAnnotationPaths = set()
+        self._failedAnnotationPaths = {}
         self._annotationWarnings = []
         self._nextAnnotationId = 1
         self._annotationCounts = {}
@@ -161,11 +178,15 @@ class MainWindow(QMainWindow, WindowMixin):
         self.itemsToShapes = {}
         self.shapesToItems = {}
 
-        listLayout = QVBoxLayout()
-        listLayout.setContentsMargins(12, 12, 12, 12)
-        listLayout.setSpacing(10)
-        
-        listLayout.addWidget(QLabel('标注类别 · 点选连续标注，保留当前工具'))
+        self.setMenuBar(ModernMenuBar(self))
+        categoryPanel, categoryLayout = panel()
+        manageButton = QPushButton('管理类别')
+        manageButton.setObjectName('labelManager')
+        manageButton.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        manageButton.setToolTip('新增、重命名、删除类别及调整颜色')
+        manageButton.clicked.connect(self.manageLabels)
+        categoryLayout.addWidget(ResponsiveRow([ui_label('标注类别', 'sectionTitle'), manageButton]))
+        categoryPanel.setToolTip('点选类别连续标注；再次点选同一类别取消预选。')
         self.categoryGrid = CategoryTable(0, 2)
         self.categoryGrid.setObjectName('categoryGrid')
         self.categoryGrid.horizontalHeader().hide()
@@ -176,20 +197,19 @@ class MainWindow(QMainWindow, WindowMixin):
         self.categoryGrid.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.categoryGrid.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.categoryGrid.setWordWrap(True)
-        self.categoryGrid.setMinimumHeight(260)
-        self.categoryGrid.verticalHeader().setDefaultSectionSize(38)
+        self.categoryGrid.setMinimumHeight(120)
+        self.categoryGrid.verticalHeader().setDefaultSectionSize(30)
         self.categoryGrid.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.categoryGrid.setItemDelegate(CategoryDelegate(self.categoryGrid))
         self.categoryGrid.itemSelectionChanged.connect(self.categorySelectionChanged)
         self.categoryGrid.columnsChanged.connect(self.refreshCategoryGrid)
-        listLayout.addWidget(self.categoryGrid, 3)
+        categoryLayout.addWidget(self.categoryGrid, 1)
+        exportPanel, exportLayout = panel()
+        exportLayout.addWidget(ui_label('导出与坐标', 'sectionTitle'))
         self.formatCombo = QComboBox()
         self.formatCombo.addItems(['COCO (*.json)', 'Pascal VOC (*.xml)'])
         self.formatCombo.currentIndexChanged.connect(self.changeExportFormat)
-        manageButton = QPushButton('管理标签与颜色')
-        manageButton.setObjectName('labelManager')
-        manageButton.clicked.connect(self.manageLabels)
-        listLayout.addWidget(ResponsiveRow([QLabel('导出'), self.formatCombo, manageButton]))
+        exportLayout.addWidget(ResponsiveRow([ui_label('导出格式'), self.formatCombo]))
         self.centerCoordinates = QLineEdit()
         self.centerCoordinates.setReadOnly(True)
         self.centerCoordinates.setPlaceholderText('打开带地理参考的 TIFF 后显示')
@@ -197,8 +217,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.copyCoordinatesButton.setToolTip('复制影像中心经纬度')
         self.copyCoordinatesButton.setEnabled(False)
         self.copyCoordinatesButton.clicked.connect(self.copyCenterCoordinates)
-        listLayout.addWidget(ResponsiveRow([QLabel('中心经纬度 WGS84'), self.centerCoordinates,
-                                            self.copyCoordinatesButton]))
+        exportLayout.addWidget(ui_label('影像中心经纬度 · WGS84'))
+        exportLayout.addWidget(ResponsiveRow([self.centerCoordinates, self.copyCoordinatesButton]))
+        exportLayout.addStretch(1)
 
         # Create and add a widget for showing current label items
         self.labelList = QListWidget()
@@ -206,38 +227,43 @@ class MainWindow(QMainWindow, WindowMixin):
         self.labelList.setItemDelegate(AnnotationDelegate(self.labelList))
         self.labelList.itemDoubleClicked.connect(self.focusAnnotation)
         self.labelList.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        labelListContainer = QWidget()
-        labelListContainer.setLayout(listLayout)
         self.labelList.itemActivated.connect(self.labelSelectionChanged)
         self.labelList.itemSelectionChanged.connect(self.labelSelectionChanged)
         self.deleteSelectedButton = QPushButton('删除所选')
         self.deleteSelectedButton.setEnabled(False)
         self.deleteSelectedButton.clicked.connect(self.deleteSelectedShape)
+        self.deleteSelectedButton.setProperty('role', 'danger')
+        self.editSelectedButton = QPushButton('修改所选')
+        self.editSelectedButton.setEnabled(False)
+        self.editSelectedButton.setToolTip('批量更改所选标注的类别或矩形类型')
+        self.editSelectedButton.clicked.connect(self.editSelectedAnnotations)
+        self.editSelectedButton.setProperty('role', 'primary')
+        self.selectionCountLabel = ui_label('已选 0 个', 'badge')
+        annotationPanel, annotationLayout = panel()
+        annotationLayout.addWidget(ResponsiveRow([ui_label('当前标注', 'sectionTitle'), self.selectionCountLabel]))
         focusButton = QPushButton('定位')
         focusButton.setToolTip('定位所选框；也可双击列表条目')
         focusButton.clicked.connect(self.focusAnnotation)
         self.lockButton = QPushButton('锁定/解锁')
         self.lockButton.setToolTip('锁定后可选择和定位，但不能移动、缩放、旋转或删除；切图后清除')
         self.lockButton.clicked.connect(self.toggleSelectedLocks)
-        annotationTitle = QLabel('标注框')
-        annotationTitle.setToolTip('Ctrl / Shift 多选标注框')
-        listLayout.addWidget(ResponsiveRow([annotationTitle, focusButton,
-                                            self.lockButton, self.deleteSelectedButton]))
+        annotationLayout.addWidget(ResponsiveRow([self.editSelectedButton, focusButton,
+                                                 self.lockButton, self.deleteSelectedButton]))
         # Connect to itemChanged to detect checkbox changes.
         self.labelList.itemChanged.connect(self.labelItemChanged)
-        listLayout.addWidget(self.labelList, 2)
+        annotationLayout.addWidget(self.labelList, 1)
         self.annotationCountLabel = QLabel('标注框总数：0')
-        self.annotationCountLabel.setStyleSheet('color: #245ac2; font-weight: 600; padding: 6px 12px;')
+        self.annotationCountLabel.setStyleSheet('color: #667085; font-size: 12px; padding: 8px 14px;')
         self.annotationCountLabel.setWordWrap(True)
         self.annotationCountLabel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 
         self.dock = QDockWidget(u'Box Labels', self)
         self.dock.setObjectName(u'Label')
-        labelListContainer.setMinimumWidth(0)
-        labelListContainer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        listLayout.setSizeConstraint(QLayout.SetNoConstraint)
-        for label in labelListContainer.findChildren(QLabel):
-            label.setWordWrap(True)
+        for label in categoryPanel.findChildren(QLabel) + annotationPanel.findChildren(QLabel):
+            if label.property('role') == 'badge':
+                label.setWordWrap(False)
+                continue
+            label.setWordWrap(label.property('role') != 'sectionTitle')
             label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         dockContainer = QWidget()
         dockContainer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
@@ -245,7 +271,19 @@ class MainWindow(QMainWindow, WindowMixin):
         dockLayout.setContentsMargins(0, 0, 0, 0)
         dockLayout.setSpacing(0)
         dockLayout.setSizeConstraint(QLayout.SetNoConstraint)
-        dockLayout.addWidget(PanelScrollArea(labelListContainer), 1)
+        self.rightSplitter = SectionSplitter(Qt.Vertical)
+        self.rightSplitter.setObjectName('rightSections')
+        self.rightSplitter.setChildrenCollapsible(False)
+        self.rightSplitter.setHandleWidth(9)
+        for region in (categoryPanel, annotationPanel, exportPanel):
+            area = PanelScrollArea(region)
+            # Reserve the gutter so vertical resizing cannot change row wrapping.
+            area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+            area.setMinimumHeight(72)
+            self.rightSplitter.addWidget(area)
+        self.rightSplitter.setContentsMargins(10, 4, 10, 0)
+        self.rightSplitter.setSizes([220, 260, 200])
+        dockLayout.addWidget(self.rightSplitter, 1)
         dockLayout.addWidget(self.annotationCountLabel)
         self.dock.setWidget(dockContainer)
 
@@ -254,7 +292,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.fileListWidget.setTextElideMode(Qt.ElideMiddle)
         self.fileListWidget.itemDoubleClicked.connect(self.fileitemDoubleClicked)
         filelistLayout = QVBoxLayout()
-        filelistLayout.setContentsMargins(12, 12, 12, 12)
+        filelistLayout.setContentsMargins(10, 2, 10, 10)
         filelistLayout.addWidget(self.fileListWidget)
         fileListContainer = QWidget()
         fileListContainer.setLayout(filelistLayout)
@@ -282,9 +320,12 @@ class MainWindow(QMainWindow, WindowMixin):
             bar.valueChanged.connect(self.updateInspectionViewport)
 
         self.canvas.newShape.connect(self.newShape)
-        self.canvas.shapeMoved.connect(self.setDirty)
+        self.canvas.shapeMoved.connect(lambda: self.setDirty(update_stats=False))
         self.canvas.editStarted.connect(self.pushUndo)
         self.canvas.selectionChanged.connect(self.shapeSelectionChanged)
+        self.canvas.labelEditRequested.connect(self.changeShapeLabel)
+        self.canvas.regionSelected.connect(self.selectRegionAnnotations)
+        self.canvas.regionCancelled.connect(lambda: self.actions.selectRegion.setChecked(False))
         self.canvas.drawingPolygon.connect(self.toggleDrawingSensitive)
         self.canvas.status.connect(self.status)
 
@@ -355,6 +396,11 @@ class MainWindow(QMainWindow, WindowMixin):
                         'Delete', 'delete', u'Delete', enabled=False)
         undo = action('撤销', self.undoAnnotation, 'Ctrl+Z', 'undo', '撤销上一次标注操作', enabled=False)
         redo = action('重做', self.redoAnnotation, 'Ctrl+Y', 'undo', '恢复上一次撤销的标注操作', enabled=False)
+        selectRegion = action('框选编辑', self.toggleRegionSelection, 'Ctrl+B', 'edit',
+                              '拖出区域选择完整包含的标注；Ctrl / Shift 可追加选择',
+                              checkable=True, enabled=False)
+        editSelected = action('修改所选标注', self.editSelectedAnnotations, 'Ctrl+M', 'edit',
+                              '批量修改类别或矩形类型', enabled=False)
         cycleOverlap = action('选择下一个重叠框', self.canvas.cycleOverlapping,
                               'Alt+Q', tip='鼠标指向重叠区域，按 Alt+Q 循环选择')
         inspect = action('大图巡检', self.showInspection, 'F2', tip='小地图跳转与手动分区检查进度')
@@ -421,7 +467,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # Lavel list context menu.
         labelMenu = QMenu()
-        addActions(labelMenu, (delete,))
+        addActions(labelMenu, (editSelected, delete,))
         self.labelList.setContextMenuPolicy(Qt.CustomContextMenu)
         self.labelList.customContextMenuRequested.connect(
             self.popLabelListMenu)
@@ -430,6 +476,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.actions = struct(save=save, saveAs=saveAs, open=open, close=close,
                               lineColor=color1, fillColor=color2,
                               create=create, createRo=createRo, delete=delete, copy=copy, undo=undo, redo=redo,
+                              selectRegion=selectRegion, editSelected=editSelected,
                               createMode=createMode, editMode=editMode, advancedMode=advancedMode,
                               shapeLineColor=shapeLineColor, shapeFillColor=shapeFillColor,
                               zoom=zoom, zoomIn=zoomIn, zoomOut=zoomOut, zoomOrg=zoomOrg,
@@ -438,13 +485,13 @@ class MainWindow(QMainWindow, WindowMixin):
                               fileMenuActions=(
                                   open, opendir, save, saveAs, close, quit),
                               beginner=(), advanced=(),
-                              editMenu=(undo, redo, copy, delete, cycleOverlap,
+                              editMenu=(undo, redo, selectRegion, editSelected, copy, delete, cycleOverlap,
                                         None, color1, color2),
                               beginnerContext=(create, createRo, copy, delete),
                               advancedContext=(createMode, editMode, copy,
                                                delete, shapeLineColor, shapeFillColor),
                               onLoadActive=(
-                                  close, create, createMode, editMode),
+                                  close, create, createMode, editMode, selectRegion),
                               onShapesPresent=(saveAs, hideAll, showAll))
 
         self.menus = struct(
@@ -457,9 +504,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         addActions(self.menus.file,
                    (open, opendir, changeSavedir, openAnnotation, self.menus.recentFiles, save, saveAs, close, None, quit))
-        # QMenuBar displays an action's icon instead of its text on Windows.
-        # Keep the question mark in the label so both parts stay visible.
-        self.guideAction = action('❔ 操作说明', self.showUserGuide, 'F1')
+        self.guideAction = action('操作说明', self.showUserGuide, 'F1')
         self.menuBar().removeAction(self.menus.help.menuAction())
         self.menuBar().addAction(self.guideAction)
         self.updater = UpdateController(self)
@@ -484,12 +529,12 @@ class MainWindow(QMainWindow, WindowMixin):
 
         self.tools = self.toolbar('Tools')
         self.actions.beginner = (
-            open, opendir, openNextImg, openPrevImg, verify, save, None, create, createRo, copy, delete, None,
+            open, opendir, openNextImg, openPrevImg, verify, save, None, create, createRo, selectRegion, copy, delete, None,
             zoomIn, zoom, zoomOut, fitWindow, fitWidth)
 
         self.actions.advanced = (
             open, save, None,
-            createMode, editMode, None,
+            createMode, editMode, selectRegion, None,
             hideAll, showAll)
 
         self.statusBar().showMessage('%s started.' % __appname__)
@@ -551,6 +596,8 @@ class MainWindow(QMainWindow, WindowMixin):
 
         self.settings = settings = Settings(types)
         self.settings.types['exportFormat'] = int
+        self.settings.types['window/toolsWidth'] = int
+        self.settings.types['window/rightSections'] = QByteArray
         self.formatCombo.setCurrentIndex(1 if settings.get('exportFormat', 0) == 1 else 0)
         self.recentFiles = list(settings.get('recentFiles', []))
         size = settings.get('window/size', QSize(1280, 850))
@@ -597,6 +644,8 @@ class MainWindow(QMainWindow, WindowMixin):
 
         self.populateModeActions()
         apply_theme(self)
+        self.resizeDocks([self.toolsDock], [settings.get('window/toolsWidth', 140)], Qt.Horizontal)
+        self.rightSplitter.restoreState(settings.get('window/rightSections', QByteArray()))
         self.status('就绪  ·  W 普通框  /  E 旋转框  /  Ctrl + 滚轮缩放  /  F1 使用说明', 0)
 
     ## Support Functions ##
@@ -669,7 +718,7 @@ class MainWindow(QMainWindow, WindowMixin):
         selected_id = previous[0].data(Qt.UserRole) if previous else None
         grid.blockSignals(True)
         try:
-            columns = 2 if grid.viewport().width() >= 360 else 1
+            columns = grid.columnsForWidth()
             grid.clearContents()
             grid.setColumnCount(columns)
             grid.setRowCount((len(self.labelStore.entries) + columns - 1) // columns)
@@ -710,10 +759,13 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def manageLabels(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle('Manage labels / 管理标签')
-        dialog.resize(440, 420)
+        dialog.setWindowTitle('管理类别与颜色')
+        dialog.resize(500, 510)
         layout = QVBoxLayout(dialog)
-        explanation = QLabel('标签和颜色自动保存到本地。\n重命名同步修改当前影像；删除正在使用的类别前需先修改对应标注。\n其他影像已保存的标注文件不会被批量修改。')
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+        layout.addWidget(ui_label('类别与颜色', 'dialogTitle'))
+        explanation = ui_label('自动保存到本地，下次打开仍可使用。')
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
         labels = QListWidget()
@@ -738,7 +790,7 @@ class MainWindow(QMainWindow, WindowMixin):
             selection = None
             try:
                 if operation in ('add', 'rename'):
-                    name, ok = QInputDialog.getText(dialog, 'Label name / 标签名', '名称',
+                    name, ok = QInputDialog.getText(dialog, '类别名称', '名称',
                                                   QLineEdit.Normal, old if operation == 'rename' else '')
                     if not ok or not name.strip():
                         return
@@ -754,7 +806,7 @@ class MainWindow(QMainWindow, WindowMixin):
                                 item.setText(name)
                 elif operation == 'delete':
                     if any(shape.label == old for shape in self.canvas.shapes):
-                        QMessageBox.information(dialog, 'Label in use', '该类别用于当前影像，请先修改或删除对应标注。')
+                        QMessageBox.information(dialog, '类别正在使用', '该类别用于当前影像，请先修改或删除对应标注。')
                         return
                     self.labelStore.delete(old)
                 else:
@@ -777,14 +829,19 @@ class MainWindow(QMainWindow, WindowMixin):
                 refresh(selection)
                 self.refreshCategoryGrid()
             except (OSError, ValueError) as exc:
-                QMessageBox.warning(dialog, 'Label library', str(exc))
+                QMessageBox.warning(dialog, '类别管理', str(exc))
 
         buttons = QHBoxLayout()
         for caption, operation in [('新增', 'add'), ('重命名', 'rename'), ('删除', 'delete'), ('颜色', 'color')]:
             button = QPushButton(caption)
+            if operation == 'add':
+                set_role(button, 'primary')
+            elif operation == 'delete':
+                set_role(button, 'danger')
             button.clicked.connect(partial(mutate, operation))
             buttons.addWidget(button)
         layout.addLayout(buttons)
+        layout.addWidget(ui_label('重命名同步当前影像；删除使用中的类别前，请先修改对应标注。'))
         close = QDialogButtonBox(QDialogButtonBox.Close)
         close.rejected.connect(dialog.reject)
         layout.addWidget(close)
@@ -820,18 +877,27 @@ class MainWindow(QMainWindow, WindowMixin):
         actions = (self.actions.create,) if self.beginner()\
             else (self.actions.createMode, self.actions.editMode)
         addActions(self.menus.edit, actions + self.actions.editMenu)
+        self.constrainToolsWidth()
 
     def setBeginner(self):
         self.tools.clear()
         addActions(self.tools, self.actions.beginner)
+        self.constrainToolsWidth()
 
     def setAdvanced(self):
         self.tools.clear()
         addActions(self.tools, self.actions.advanced)
+        self.constrainToolsWidth()
 
-    def setDirty(self):
+    def constrainToolsWidth(self):
+        width = self.tools.measureExpandedWidth()
+        self.toolsDock.setMaximumWidth(width)
+        self.tools.updatePresentation()
+
+    def setDirty(self, update_stats=True):
         self.dirty = True
-        self.updateAnnotationStats()
+        if update_stats:
+            self.updateAnnotationStats()
         self.canvas.verified = False
         self.actions.save.setEnabled(True)
         self.updateSaveStatus()
@@ -856,9 +922,14 @@ class MainWindow(QMainWindow, WindowMixin):
             text, color = '✓ 已保存', '#267548'
         else:
             text, color = '尚未保存标注', '#65758b'
+        tooltip = self._annotationPaths.get(LabelFile.suffix, self.filePath or '')
+        state = text, color, tooltip
+        if getattr(self, '_saveStatusState', None) == state:
+            return
+        self._saveStatusState = state
         self.saveStatus.setText(text)
         self.saveStatus.setStyleSheet('color: %s; padding: 0 8px;' % color)
-        self.saveStatus.setToolTip(self._annotationPaths.get(LabelFile.suffix, self.filePath or ''))
+        self.saveStatus.setToolTip(tooltip)
 
     def enableCreate(self,b):
         self.isEnableCreate = not b
@@ -915,8 +986,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self._raster = False
         self._detailKey = None
         self._detailTimer.stop()
-        for worker in self._workers:
-            worker.requestInterruption()
+        for worker in (self._loadWorker, self._detailWorker):
+            if worker is not None:
+                worker.requestInterruption()
         self.spinner.setRunning(False)
         self.image = QImage()
         self.dirty = False
@@ -998,6 +1070,7 @@ class MainWindow(QMainWindow, WindowMixin):
         if hasattr(self, 'actions'):
             self.actions.create.setChecked(False)
             self.actions.createRo.setChecked(False)
+            self.actions.selectRegion.setChecked(False)
         if hasattr(self, 'canvas'):
             self.canvas._editingGesture = self.canvas._rotatingGesture = False
             self.canvas.current = None
@@ -1013,6 +1086,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.status('已退出连续标注模式')
             return
         entry = self.selectedCategory()
+        self.actions.selectRegion.setChecked(False)
         self.canvas.current = None
         self.canvas.line.points = []
         self.canvas._editingGesture = self.canvas._rotatingGesture = False
@@ -1023,6 +1097,98 @@ class MainWindow(QMainWindow, WindowMixin):
         self.actions.createRo.setChecked(kind == 'rotated')
         self.status('连续标注：%s · %s · 再次点击当前工具退出' %
                     (entry['name'] if entry else '画框后选择标签', '普通框' if kind == 'normal' else '旋转框'), 0)
+
+    def toggleRegionSelection(self, checked=False):
+        self.stopDrawing()
+        self.actions.selectRegion.setChecked(checked)
+        self.canvas.setRegionSelection(checked)
+        self.status('框选编辑：左键拖出区域，选中完整包含的可见标注 · Ctrl / Shift 追加选择 · Esc 退出'
+                    if checked else '已退出框选编辑', 0 if checked else 5000)
+
+    def selectRegionAnnotations(self, shapes, additive=False):
+        blocked = self.labelList.blockSignals(True)
+        try:
+            if not additive:
+                self.labelList.clearSelection()
+            for shape in shapes:
+                if shape in self.shapesToItems:
+                    self.shapesToItems[shape].setSelected(True)
+        finally:
+            self.labelList.blockSignals(blocked)
+        self.labelSelectionChanged()
+        self.status('已选中 %d 个标注 · 可“修改所选”或“删除所选”；锁定框需先解锁' %
+                    len(self.labelList.selectedItems()))
+
+    def updateSelectionControls(self):
+        count = len(self.labelList.selectedItems())
+        self.selectionCountLabel.setText('已选 %d 个' % count)
+        self.editSelectedButton.setEnabled(count > 0)
+        self.actions.editSelected.setEnabled(count > 0)
+
+    def editSelectedAnnotations(self):
+        shapes = [self.itemsToShapes[item] for item in self.labelList.selectedItems()]
+        unlocked = [shape for shape in shapes if not shape.locked]
+        if not unlocked:
+            self.status('请先选择标注；锁定的框需要先解锁')
+            return
+        dialog = BatchEditDialog(self, len(unlocked), len(shapes) - len(unlocked),
+                                 [entry['name'] for entry in self.labelStore.entries])
+        if dialog.exec_() == QDialog.Accepted:
+            self.applyAnnotationEdits(dialog.category.currentText().strip() or None,
+                                      (None, 'normal', 'rotated')[dialog.kind.currentIndex()])
+
+    def changeShapeLabel(self, shape):
+        if shape not in self.canvas.shapes or shape.locked:
+            return
+        category = self.chooseShapeLabel(shape, editing=True)
+        if category:
+            self.applyAnnotationEdits(category=category, shapes=[shape])
+
+    def applyAnnotationEdits(self, category=None, kind=None, shapes=None):
+        if kind not in (None, 'normal', 'rotated'):
+            raise ValueError('Unknown rectangle type')
+        if shapes is None:
+            shapes = [self.itemsToShapes[item] for item in self.labelList.selectedItems()]
+        shapes = [shape for shape in shapes if shape in self.canvas.shapes and not shape.locked]
+        if not shapes:
+            return False
+        if category:
+            try:
+                category = self.labelStore.ensure(category)['name']
+            except (OSError, ValueError) as exc:
+                self.errorMessage('无法修改类别', str(exc))
+                return False
+        changed = [s for s in shapes if (category and s.label != category)
+                   or (kind and s.isRotated != (kind == 'rotated'))]
+        if not changed:
+            return False
+        self.pushUndo()
+        self.invalidateInspection([s.boundingRect() for s in changed])
+        blocked = self.labelList.blockSignals(True)
+        try:
+            for shape in changed:
+                if category:
+                    shape.label = category
+                    self.applyLabelColor(shape)
+                if kind == 'normal' and shape.isRotated:
+                    rect = shape.boundingRect()
+                    shape.points = [rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()]
+                    shape.direction = 0
+                    shape.isRotated = False
+                    shape.close()
+                elif kind == 'rotated':
+                    shape.isRotated = True
+                    shape.close()
+                item = self.shapesToItems[shape]
+                item.setText(shape.label)
+                style_label_item(item, shape.line_color)
+        finally:
+            self.labelList.blockSignals(blocked)
+        self.refreshLabelLibrary()
+        self.canvas.update()
+        self.setDirty()
+        self.status('已修改 %d 个标注 · Ctrl+Z 可撤销' % len(changed))
+        return True
 
     def toggleDrawingSensitive(self, drawing=True):
         """In the middle of drawing, toggling between modes should be disabled."""
@@ -1109,6 +1275,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.actions.copy.setEnabled(selected)
         self.actions.shapeLineColor.setEnabled(selected)
         self.actions.shapeFillColor.setEnabled(selected)
+        self.updateSelectionControls()
 
     def addLabel(self, shape):
         self.applyLabelColor(shape)
@@ -1261,6 +1428,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.deleteSelectedButton.setEnabled(bool(items))
         for action in (self.actions.copy, self.actions.shapeLineColor, self.actions.shapeFillColor):
             action.setEnabled(len(items) == 1)
+        self.updateSelectionControls()
 
     def centerOnImagePoint(self, point):
         generation = self._generation
@@ -1390,21 +1558,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.setDirty()
         self.status('已标注 %s · 可继续绘制，点击当前工具退出' % entry['name'])
 
-    def chooseShapeLabel(self, shape):
-        dialog = QDialog(self, Qt.Popup)
-        dialog.setWindowTitle('选择或新增标签')
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel('选择标签，或输入新标签名称'))
-        combo = QComboBox(dialog)
-        combo.setEditable(True)
-        combo.addItems([entry['name'] for entry in self.labelStore.entries])
-        combo.setCurrentIndex(-1)
-        combo.setMinimumWidth(260)
-        layout.addWidget(combo)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
-        buttons.accepted.connect(lambda: dialog.accept() if combo.currentText().strip() else None)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+    def chooseShapeLabel(self, shape, editing=False):
+        dialog = ShapeLabelDialog(self, self.labelStore.entries, shape.label if editing else None)
+        combo = dialog.category
         dialog.adjustSize()
         point = shape.boundingRect().bottomLeft()
         local = (point + self.canvas.offsetToCenter()) * self.canvas.scale
@@ -1509,6 +1665,8 @@ class MainWindow(QMainWindow, WindowMixin):
         bar.setValue(round(bar.value() + max(40, bar.singleStep() * 3) * units))
 
     def setZoom(self, value):
+        if self.image.isNull() or self._loading:
+            return
         viewport = self.centralWidget().viewport()
         first_view = self.canvas.viewportSize.isEmpty()
         self.canvas.viewportSize = viewport.size()
@@ -1562,6 +1720,8 @@ class MainWindow(QMainWindow, WindowMixin):
         self.addZoom(units)
 
     def setFitWindow(self, value=True):
+        if self.image.isNull() or self._loading:
+            return
         self._zoomSerial += 1
         self.canvas.viewOffset = QPointF()
         if value:
@@ -1572,6 +1732,8 @@ class MainWindow(QMainWindow, WindowMixin):
                                        self.canvas.imageSize.height() / 2))
 
     def setFitWidth(self, value=True):
+        if self.image.isNull() or self._loading:
+            return
         self._zoomSerial += 1
         self.canvas.viewOffset = QPointF()
         if value:
@@ -1754,7 +1916,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.canvas.verified = verified
             self.labelFile = LabelFile()
             self._annotationPaths[os.path.splitext(path)[1].lower()] = os.path.abspath(path)
-            self._failedAnnotationPaths.discard(identity(path))
+            self._failedAnnotationPaths.pop(identity(path), None)
             index = 0 if path.lower().endswith('.json') else 1
             self.formatCombo.blockSignals(True)
             try:
@@ -1767,7 +1929,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.setClean()
             return True
         except Exception as exc:
-            self._failedAnnotationPaths.add(identity(path))
+            self._failedAnnotationPaths[identity(path)] = file_revision(path)
             self.errorMessage('Error opening annotation', str(exc))
             return False
 
@@ -1793,7 +1955,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.updateInspectionViewport()
 
     def paintCanvas(self):
-        assert not self.image.isNull(), "cannot paint null image"
+        if self.image.isNull():
+            self.canvas.update()
+            return
         self.canvas.scale = 0.01 * self.zoomWidget.value()
         self.canvas.viewportSize = self.centralWidget().viewport().size()
         self.canvas.adjustSize()
@@ -1801,6 +1965,8 @@ class MainWindow(QMainWindow, WindowMixin):
         self.scheduleDetail()
 
     def adjustScale(self, initial=False):
+        if self.image.isNull() or self.canvas.imageSize.isEmpty():
+            return
         value = self.scalers[self.FIT_WINDOW if initial else self.zoomMode]()
         self.zoomWidget.setValue(100 * value)
 
@@ -1822,6 +1988,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def closeEvent(self, event):
         if not self._closePending and not self.mayContinue():
+            self.updater.pending_installer = None
             event.ignore()
             return
         self.updater.cancel()
@@ -1848,6 +2015,8 @@ class MainWindow(QMainWindow, WindowMixin):
         s['window/size'] = self.size()
         s['window/position'] = self.pos()
         s['window/state'] = self.saveState()
+        s['window/toolsWidth'] = self.toolsDock.width()
+        s['window/rightSections'] = self.rightSplitter.saveState()
         s['line/color'] = self.lineColor
         s['fill/color'] = self.fillColor
         s['recentFiles'] = self.recentFiles
@@ -1861,6 +2030,15 @@ class MainWindow(QMainWindow, WindowMixin):
             s['lastOpenDir'] = self.lastOpenDir
         else:
             s['lastOpenDir'] = ""
+        try:
+            if self.updater.launch_pending_installer():
+                self.queueEvent(QApplication.instance().quit)
+        except (OSError, ValueError) as exc:
+            self.updater.pending_installer = None
+            self._closePending = False
+            self.show()
+            self.errorMessage('无法启动安装程序', str(exc))
+            event.ignore()
 
     ## User Dialogs ##
 
@@ -2086,8 +2264,11 @@ class MainWindow(QMainWindow, WindowMixin):
         if not annotationFilePath:
             return False
         try:
-            if identity(annotationFilePath) in self._failedAnnotationPaths:
-                raise ValueError('此标注文件读取失败，已阻止覆盖。请修复原文件，或另存为一个新文件。')
+            failed_revision = self._failedAnnotationPaths.get(identity(annotationFilePath))
+            if (failed_revision is not None and failed_revision[2] > 0
+                    and file_revision(annotationFilePath) == failed_revision
+                    and not empty_annotation_placeholder(annotationFilePath)):
+                raise ValueError('此标注文件读取失败且内容尚未改变，已阻止覆盖。请删除损坏文件或修复后重新读取，也可另存为新文件。')
             if not safe_to_overwrite(annotationFilePath, self.filePath,
                                      self._annotationPaths.values()):
                 raise ValueError('目标标注属于其他影像，或缺少来源信息。请使用“另存为”选择新文件。')
@@ -2096,6 +2277,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.errorMessage('无法保存标注', str(exc))
             return False
         if self.saveLabels(annotationFilePath):
+            self._failedAnnotationPaths.pop(identity(annotationFilePath), None)
             self._annotationPaths[LabelFile.suffix] = os.path.abspath(annotationFilePath)
             self.setClean()
             self.statusBar().showMessage('Saved to  %s' % annotationFilePath)

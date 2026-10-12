@@ -9,10 +9,17 @@ import pytest
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QSettings, QStandardPaths, QCoreApplication, QEvent
 from PyQt5.QtTest import QTest
+from PyQt5.QtGui import QFontDatabase
 
 @pytest.fixture(scope='session')
 def app():
     application = QApplication.instance() or QApplication([])
+    # Windows' offscreen plugin does not enumerate system fonts. Use installed
+    # fonts so geometry assertions exercise real text instead of empty glyphs.
+    if not QFontDatabase().families():
+        for path in ('C:/Windows/Fonts/segoeui.ttf', 'C:/Windows/Fonts/msyh.ttc'):
+            if Path(path).is_file():
+                QFontDatabase.addApplicationFont(path)
     application.setApplicationName('roLabelImg-regression')
     application.setQuitOnLastWindowClosed(False)
     QStandardPaths.setTestModeEnabled(True)

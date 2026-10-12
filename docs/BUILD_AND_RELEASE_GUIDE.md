@@ -3,7 +3,7 @@
 项目：<https://github.com/YG817/rolabelImg-master>。
 工作目录：`D:\roLabelImg-master`。以下命令均在 PowerShell 中执行。
 
-当前状态：2.0.0 已正式发布；本地准备的 2.0.1 使用软件现有图标作为 EXE 和安装包图标。
+当前本地版本为 2.0.2，包含区域编辑、保存恢复与软件内下载更新，按用户要求暂不上传。2.0.1 已正式发布；本文保留当时的 2.0.1 示例，后续发布请将版本号、标签和文件名统一替换为 2.0.2。
 说明中的 2.0.1 是本次版本示例，以后发布 2.0.2 时，版本、标签和文件名一起递增。
 下面的上传及发布命令供你选择执行；创建本手册不等于已经上传或发布 2.0.1。
 
@@ -57,7 +57,7 @@ cd D:\roLabelImg-master
 .\.build-venv\Scripts\python.exe -m pytest -q
 ```
 
-本次图标修正已将本地版本设为 2.0.1，不必再次修改。
+本地已将 APP_VERSION 和 setup.cfg 同步设为 2.0.2；发布这一版时使用 v2.0.2 标签，不复用 v2.0.1。
 2.0.0 已发布，不应重打同名安装包并替换正式版本；使用 2.0.1 发布更新。
 
 ## 四、本地构建：两种方式
@@ -82,7 +82,8 @@ D:\roLabelImg-master\release\
 ├── roLabelImg-Setup-2.0.1-win-x64.exe
 ├── roLabelImg-2.0.1-win-x64-portable.zip
 ├── SHA256SUMS.txt
-└── build-info.json
+├── build-info.json
+└── update.json
 ```
 
 控制台最终出现 `Release artifacts: D:\roLabelImg-master\release` 表示整套构建结束。
@@ -117,7 +118,7 @@ APP_VERSION 一致，再生成安装包、ZIP、校验和及构建信息。
 ```
 
 这个原始命令只编译安装器，不验证 EXE 版本、不生成 ZIP 或更新 SHA256SUMS。
-日常操作优先用构建脚本，保证四个发布文件来自同一轮构建。
+日常操作优先用构建脚本，保证五个发布文件来自同一轮构建。`update.json` 包含版本、日志、安装包地址、大小和 SHA-256；必须与安装包一起上传。
 运行 spec 前还需要构建脚本生成 build/windows-version.txt，所以不建议绕过它直接运行 PyInstaller。
 
 ## 五、安装包 logo：文件图标与向导插图分开
@@ -221,7 +222,7 @@ git push origin v2.0.1
 4. 打开 <https://github.com/YG817/rolabelImg-master/actions>，进入新的 Windows release 任务。
 5. 等 Test source、Build client and installer、Create draft release 均成功。
 6. 登录 YG817，打开 <https://github.com/YG817/rolabelImg-master/releases>，查看 Draft 草稿。
-7. 下载草稿中的安装包，测试安装和升级；检查四个发布附件和版本说明。
+7. 下载草稿中的安装包，测试安装和升级；检查五个发布附件和版本说明。
 8. 不勾选预发布，将其设为最新版本，点击 Publish release。
 
 这个方式会在 GitHub 的 Windows 环境重新构建；不需要上传本机的 release 文件。
@@ -230,7 +231,7 @@ Artifacts 是构建下载区；Releases 是面向用户的发布区。草稿只�
 
 ## 八、发布方式 2：本地构建，网页手动上传
 
-适用于你要发布已经在本机生成并测试的四个文件。
+适用于你要发布已经在本机生成并测试的五个文件。
 
 为了避免标签推送触发另一套云端构建，先在 Actions → Windows release → 菜单中选择
 Disable workflow。只在这次手动发布期间暂停，结束后重新启用。
@@ -246,20 +247,21 @@ git push origin v2.0.1
 
 4. Releases → Draft a new release。
 5. Choose a tag 选择已经上传的 v2.0.1；标题写 roLabelImg 2.0.1。
-6. 填写版本说明，拖入 release 下本版本的四个文件：
+6. 填写版本说明，拖入 release 下本版本的五个文件：
 
 ```text
 roLabelImg-Setup-2.0.1-win-x64.exe
 roLabelImg-2.0.1-win-x64-portable.zip
 SHA256SUMS.txt
 build-info.json
+update.json
 ```
 
 7. 等上传完成，检查附件，点击 Publish release。
 8. 返回 Actions，Enable workflow，供后续自动发布使用。
 
 不要把整个 release 文件夹上传到 Code 页面，也不要上传 dist 的零散运行库。
-release 文件夹可能保留以前版本的产物，手动选择本版本这四个文件。
+release 文件夹可能保留以前版本的产物，手动选择本版本这五个文件。这里的 2.0.1 是历史示例，实际发布当前本地版本时替换为 2.0.2；不要修改已经发布的旧版附件。
 标签已经存在时不要重复创建；先核对它指向的提交。正式版本不覆盖、不移动旧标签。
 
 ## 九、发布方式 3：本地构建，GitHub CLI 上传
@@ -292,7 +294,7 @@ git push origin v2.0.1
 
 gh release create v2.0.1 --repo YG817/rolabelImg-master --verify-tag --draft --title "roLabelImg 2.0.1" --notes-file packaging/RELEASE_NOTES.md
 
-gh release upload v2.0.1 release/roLabelImg-Setup-2.0.1-win-x64.exe release/roLabelImg-2.0.1-win-x64-portable.zip release/SHA256SUMS.txt release/build-info.json --repo YG817/rolabelImg-master
+gh release upload v2.0.1 release/roLabelImg-Setup-2.0.1-win-x64.exe release/roLabelImg-2.0.1-win-x64-portable.zip release/SHA256SUMS.txt release/build-info.json release/update.json --repo YG817/rolabelImg-master
 
 gh release view v2.0.1 --repo YG817/rolabelImg-master --web
 ```
@@ -321,13 +323,14 @@ Actions → Windows release → Run workflow → 选择 main → Run workflow。
 发布正式 2.0.1，带精确命名的 Setup 附件
   → 2.0.0 客户端检查 GitHub 最新正式版本
   → 提示有新版本
-  → 用户点击链接，在浏览器下载安装包
-  → 保存标注、退出软件
+  → 新客户端在更新窗口显示日志，并直接下载、显示进度
+  → 用户点“退出并安装”，处理未保存标注、退出软件
   → 运行 Setup，覆盖安装
 ```
 
 客户端自动检查在打包版启动后触发，按 24 小时间隔限制请求；也可以打开“版本与更新”手动检查。
 它比较版本号，不会自动替换程序。草稿和预发布版不会进入正常升级提示。
+新客户端优先下载 `releases/latest/download/update.json`，不使用 REST 查询接口获取该文件。旧发布缺少它时兼容 API；受限按服务器等待时间停止请求。成功查到的新版本会缓存，查询受限时仍可打开缓存日志、下载或使用已校验的本地安装包。
 保留 installer.iss 的 AppId、安装目录规则和用户数据路径，升级后标签和设置才可继续使用。
 
 ## 十二、遇到问题时按阶段检查

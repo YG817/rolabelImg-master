@@ -2,7 +2,7 @@
 
 发布仓库：<https://github.com/YG817/rolabelImg-master>。
 本方案以 Windows 10/11 x64、Python 3.12、公开 GitHub Releases 为目标。
-**2.0.0 已正式发布**，当前本地准备的图标修正版是 **2.0.1**。
+**2.0.1 已正式发布**。本地版本保持 **2.0.2**；功能版此前已本地构建，最新界面调整只在源码中。按用户要求，等待界面确认后再重新构建、调整版本或上传 GitHub。界面预览见 `UI_REVIEW_2.0.2.md`。
 逐步操作、多种发布方式及图标替换请看 [构建与发布操作手册](BUILD_AND_RELEASE_GUIDE.md)。
 
 ## 1. 发布流程
@@ -125,6 +125,7 @@ release/roLabelImg-Setup-2.0.0-win-x64.exe
 release/roLabelImg-2.0.0-win-x64-portable.zip
 release/SHA256SUMS.txt
 release/build-info.json
+release/update.json
 ```
 
 用户下载 Setup.exe 即可安装。绿色版用户需要完整解压 ZIP，不能单独拷贝 exe。
@@ -193,7 +194,13 @@ AppMutex=Local\roLabelImg-running
 后台使用标准库 HTTPS 与 QThread，不依赖 Qt5 在开发机器上找到的外部 OpenSSL DLL。
 连接和读取设置超时，元数据上限 1 MiB；关闭时请求取消，并使用现有线程生命周期管理。
 
-请求地址：
+优先读取公开发布附件（后续新发布需带 `update.json`），减少对 REST 查询额度的依赖：
+
+```text
+https://github.com/YG817/rolabelImg-master/releases/latest/download/update.json
+```
+
+旧发布没有该附件时，兼容请求 API：
 
 ```text
 https://api.github.com/repos/YG817/rolabelImg-master/releases/latest
@@ -207,20 +214,24 @@ from libs.update_checker import release_information
 # release_json 是 GitHub API 的返回对象。
 info = release_information(release_json, current='2.0.0')
 if info:
-    # info 包含 version、url、notes。
-    # 在界面提示用户，点击后调用系统浏览器。
+    # info 包含 version、url、notes、size、sha256、release_url。
+    # 更新窗口显示说明，并用后台线程下载到本地。
     print(info['version'], info['url'])
 ```
 
 实际应用已经处理线程、界面及关闭事件，不要在 GUI 主线程直接调用网络函数。
 仅接受配置仓库的 HTTPS 安装包地址、精确文件名及已上传的有效附件。
-Release body 在窗口内以纯文本显示，避免把发布说明当作可执行 HTML。
+Release body 的标题和列表经过转义后显示，不加载日志中的外部图片或执行 HTML。
 网络失败、限流、仓库没有 Release 不影响标注；自动检查静默失败，手动检查在状态栏说明原因。
-弹窗有“打开浏览器下载安装包”和“复制下载链接”，便于默认浏览器失败时继续操作。
+弹窗有“下载更新”，显示进度、大小和速度，可取消、重试；“前往发布页”和“复制下载链接”作为备用方式。
 
-**这里没有自动替换 exe 的代码。** 下载和安装由用户执行，符合当前更新方式。
-收到提示后用户应：保存 → 下载 → 退出软件 → 安装新版本 → 重新打开。
-SHA256SUMS.txt 用于手动核对下载文件，客户端不负责校验浏览器下载到本地的文件。
+下载由 `libs/update_download.py` 后台流式写入临时文件，核对发布大小和 GitHub 提供的 SHA-256，成功后替换为完整安装包。取消、失败清理临时文件，切换影像不打断更新下载。
+下载完成后由用户点“退出并安装”，先执行现有未保存标注处理流程。主进程完全退出后，隐藏的 Windows 辅助进程再次核对下载文件 SHA-256 并启动 Inno Setup；安装向导保留用户操作，不静默替换程序。
+首次从旧版升级仍可使用浏览器或本地新安装包；安装新客户端后即可使用软件内下载。
+
+成功查到的版本、日志、安装包地址、大小及校验值写入本地设置。重启后仍可通过“查看日志并更新”使用缓存，界面注明缓存时间，避免将旧记录误当成最新查询结果。API 或网络失败不删除缓存；有效查询确认没有更高版本才清除记录。
+限流依据 HTTP 状态、响应信息、`x-ratelimit-remaining`、`x-ratelimit-reset` 和 `retry-after` 判定，与普通访问拒绝区分。冷却时间持久化，期间手动点击只显示本地提示、不发送查询；连续受限延长等待。已下载且匹配 SHA-256 的安装包在后台核验后可直接复用。
+安装包仍需要可访问的下载链接；版本查询受限与文件下载分别处理，不能保证 GitHub 的文件服务或用户网络永远可用。此实现不在客户端内放置维护者访问令牌。
 
 ## 7. 首次上传 GitHub
 

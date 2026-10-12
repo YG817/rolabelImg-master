@@ -5,6 +5,7 @@ from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen
 from PyQt5.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QSpinBox)
 from annotation_paths import identity
+from ui_theme import ModernDialog as QDialog, ui_label, set_role, panel
 
 
 class OverviewMap(QWidget):
@@ -76,11 +77,17 @@ class InspectionDialog(QDialog):
         self.path = None
         self.progress = {}
         self.setWindowTitle('大图巡检 · 小地图与分区进度')
-        self.resize(390, 420)
+        self.resize(460, 540)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel('黄色：当前分区  蓝色：当前视野  绿色：已人工检查'))
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+        layout.addWidget(ui_label('大图巡检', 'dialogTitle'))
+        layout.addWidget(ui_label('黄色当前分区 · 蓝色当前视野 · 绿色已人工检查'))
         self.overview = OverviewMap(self)
-        layout.addWidget(self.overview, 1)
+        overviewPanel, overviewLayout = panel()
+        overviewLayout.setContentsMargins(6, 6, 6, 6)
+        overviewLayout.addWidget(self.overview)
+        layout.addWidget(overviewPanel, 1)
         row = QHBoxLayout()
         row.addWidget(QLabel('横向 / 纵向分区数'))
         self.divisions = QSpinBox()
@@ -94,6 +101,7 @@ class InspectionDialog(QDialog):
         previous = QPushButton('上一分区')
         following = QPushButton('下一分区')
         self.markButton = QPushButton('完成本分区')
+        set_role(self.markButton, 'primary')
         previous.clicked.connect(lambda: self.selectRegion(self.overview.active - 1))
         following.clicked.connect(lambda: self.selectRegion(self.overview.active + 1))
         self.markButton.clicked.connect(lambda checked=False: self.markRequested.emit())
@@ -109,7 +117,7 @@ class InspectionDialog(QDialog):
         row.addWidget(self.originalSizeButton)
         row.addWidget(self.fitButton)
         layout.addLayout(row)
-        note = QLabel('点击小地图跳转。分区完成需手动确认；\n确认前保存修改，编辑涉及的分区会取消完成标记。')
+        note = ui_label('点击小地图跳转；完成本分区前会保存标注。修改过的分区需重新检查。')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.overview.activated.connect(self.selectAt)
